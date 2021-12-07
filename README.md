@@ -7,7 +7,7 @@ This repository requires that Julia v1.7.0 is installed on the system.
 
 # Julia Usage
 If Julia v1.7.0 is installed, then using this repository is quite simple. For instance, suppose that this repository is located on your filesystem at the relative path "./slip_contraction/".
-To get started, start Julia, and execute the commands:
+To begin, start Julia, and execute the following commands in the REPL:
 
 ```julia
 using Pkg
