@@ -13,11 +13,19 @@ end
 const default_params = Params(74.5,4000,1.0)
 
 """
+Stance coordinates
 x[1] = body world frame horizontal
 x[2] = body world frame vertical
 x[3] = body foot frame horizontal
 x[4] = body foot frame vertical
+x[5:8] = d/dt x[1:4]
+"""
 
+"""
+Flight coordinates
+x[1] = body world frame horizontal
+x[2] = body world frame vertical
+x[3:4] = d/dt x[1:2]
 """
 function stance_energy(x::Vector{T},p::Params) where T<:Real
     .5*p.m*(x[5]^2+x[6]^2)+p.m*g*x[2]+.5*p.k*(sqrt(x[3]^2+x[4]^2)-p.l0)^2
@@ -52,13 +60,15 @@ end
 """
 Returns the value of the guard for a touchdown event
 """
-function stance_guard(x::Vector{T},θ::T,gnd::T,p::Params) where T<:Real
-    return x[2]-p.l0*cos(θ)-gnd
+function stance_guard(x::Vector{T},θ::T,p::Params) where T<:Real
+    return x[2]-p.l0*cos(θ)
 end
 
-function stance_reset(x::Vector{T}, p::Params) where T<:Real
-    xnew = zeros(T,8)
-    xnew[1:2] = xnew[3:4] = x[1:2]
+function stance_reset(x::Vector{T},θ::T,p::Params) where T<:Real
+    xnew = zeros(T,2n_stance)
+    xnew[1:2] = x[1:2]
+    xnew[3] = -p.l0*sin(θ)
+    xnew[4] = x[2]
     xnew[5:6] = xnew[7:8] = x[3:4]
     return xnew
 end
@@ -66,19 +76,19 @@ end
 """
 Computes the saltation matrix for a touchdown event
 """
-function stance_saltation(x::Vector{T},θ::T,gnd::T,u::T,p::Params) where T<:Real
+function stance_saltation(x::Vector{T},θ::T,u::T,p::Params) where T<:Real
     f1 = flight_dynamics(x,p)
-    R(x) = stance_reset(x,p)
+    R(x) = stance_reset(x,θ,p)
     f2 = stance_dynamics(R(x),u,p)
     DR = ForwardDiff.jacobian(R,x)
-    g(x) = stance_guard(x,eltype(x)(θ),eltype(x)(gnd),p)
+    g(x) = stance_guard(x,eltype(x)(θ),p)
     Dg = ForwardDiff.gradient(g,x)
     return  DR - ((f2 - DR*f1)*Dg')/(Dg'*f1)
 end
 
 
 function flight_guard(x::Vector{T},p::Params) where T<:Real
-    x[3]^2+x[4]^2-p.l0
+    p.l0-x[3]^2-x[4]^2
 end
 
 function flight_reset(x::Vector{T},p::Params) where T<:Real
@@ -93,7 +103,7 @@ function flight_saltation(x::Vector{T},u::T,p::Params) where T<:Real
     R(x) = flight_reset(x,p)
     f2 = flight_dynamics(R(x),p)
     DR = ForwardDiff.jacobian(R,x)
-    g(x) = stance_guard(x,eltype(x)(θ),eltype(x)(gnd),p)
+    g(x) = flight_guard(x,p)
     Dg = ForwardDiff.gradient(g,x)
     return  DR - ((f2 - DR*f1)*Dg')/(Dg'*f1)
 end

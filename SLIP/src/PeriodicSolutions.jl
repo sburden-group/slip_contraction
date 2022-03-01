@@ -2,6 +2,7 @@ module PeriodicSolutions
 import ..Model
 import ..SimTools
 using NLsolve
+using LinearAlgebra
 """
 This file demonstrates how to find periodic passive solutions to SLIP motion
 by searching for trajectories with symmetric stance periods.
@@ -46,34 +47,32 @@ function direct_method( f::Function,    # dynamics in form xdot = f(x,t)
     )
 end
 
-"""
-Integrates the stance dynamics given initial state *IN FOOT FRAME* until stance ends,
-then evaluates the stance symmetry boundary conditions.
-"""
-function shooting_method(x0::Vector{T},t::T,p::Model.Params) where T<:Real
+
+function shooting_method(θ::T,v::Vector{T},t::T,p::Model.Params) where T<:Real
+    x0 = [-p.l0*sin(θ),p.l0*cos(θ),v[1],v[2]]
+    xi = Model.stance_reset(x0,θ,p)
+
     f(x,t) = begin
-        y = Model.stance_reset(x,p)
-        Model.stance_dynamics(y,T(0.),p)[[1,2,5,6]]
+        Model.stance_dynamics(x,T(0.),p)
     end
 
     # flows the system to time τ from x0 and returns the leg-length guard
     g(τ) = begin
-        xf = SimTools.flow(f,x0,τ,T(1e-4))
-        return xf[1]^2+xf[2]^2-p.l0
+        xf = SimTools.flow(f,xi,T(0),τ,T(1e-4))
+        return sqrt(xf[3]^2+xf[4]^2)-p.l0
     end
 
     # solve for the time when stance ends
-    result = nlsolve(x->g(x[1]),[t])
+    result = nlsolve(t->g(t[1]),[t])
 
     # flow to end of stance
-    xf = SimTools.flow(f,x0,result.zero[1],T(1e-4))
+    xf = SimTools.flow(f,xi,T(0.),result.zero[1],T(1e-4))
 
-    # evauate boundary conditions
+    # # evauate boundary conditions
     vcat(
-        x0[1]+xf[1],
-        x0[2]-xf[2],
-        x0[3]-xf[3],
-        x0[4]+xf[4],
+        θ + atan(-xf[3],xf[4]),
+        v[1]-xf[7],
+        v[2]+xf[8],
         t-result.zero[1]
     )
 end
@@ -82,10 +81,14 @@ end
 Searches for a forward running gait given a specified average forward speed during stance,
 and a touchdown angle for the leg. Returns the full initial state and the duration of the 
 stance period.
+
+Output needs to be sanity checked, since there are some solutions to this BVP that are physically
+implausible.
 """
 function forward_running(speed, θtd, p::Model.Params)
     f(x,t) = begin
-        y = Model.stance_reset(x,p)
+        θ = atan(-x[1],x[2])
+        y = Model.stance_reset(x,θ,p)
         Model.stance_dynamics(y,0.,p)[5:6]
     end
 
@@ -107,10 +110,14 @@ function forward_running(speed, θtd, p::Model.Params)
     vi = q[1:3,:]'*[-3/2,2,-1/2]*N/t
 
     # # refine solution using shooting method
-    result = nlsolve(x->shooting_method(x[1:4],x[5],p),vcat(qi,vi,t);ftol=1e-7,xtol=1e-6)
+    result = nlsolve(x->shooting_method(x[1],x[2:3],x[4],p),vcat(atan(-qi[1],qi[2]),vi,t);ftol=1e-16)
     x = result.zero[1:4]
-    t = result.zero[5]
+    θ = result.zero[1]
+    v = result.zero[2:3]
+    t = result.zero[4]
+    x = vcat(-p.l0*sin(θ),p.l0*cos(θ),v)
     return x, t
 end
+
 
 end
